@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>İstanbul Minibüs Hattı – Premium Sorun Analizi</title>
+    
+    <!-- Modern Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    
+    <style>
+        :root {
+            --bg-color: #0b0b0b;
+            --panel-bg: rgba(20, 20, 20, 0.8);
+            --accent-green: #00ff88;
+            --accent-orange: #ffbb00;
+            --accent-red: #ff4444;
+            --text-color: #ffffff;
+            --border-style: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        body { 
+            margin: 0; 
+            background: var(--bg-color); 
+            color: var(--text-color); 
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        #map { height: 100vh; width: 100%; }
+
+        /* Glassmorphism Panel */
+        #panel {
+            position: absolute; 
+            top: 20px; 
+            left: 20px; 
+            width: 320px;
+            max-height: 90vh;
+            background: var(--panel-bg); 
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 24px; 
+            border-radius: 20px;
+            z-index: 1000; 
+            box-shadow: 0 8px 32px rgba(0,0,0,0.8);
+            border: var(--border-style);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            overflow-y: auto;
+        }
+
+        h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--accent-green); }
+        p { font-size: 13px; color: #aaa; margin: 0; line-height: 1.5; }
+
+        .input-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #888; }
+
+        input, textarea {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 10px;
+            color: #fff;
+            font-family: inherit;
+            transition: 0.3s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent-green);
+            box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+        }
+
+        button {
+            background: linear-gradient(135deg, #00ff88 0%, #00bd6a 100%);
+            color: #000;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.3s;
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0, 255, 136, 0.4);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            border: var(--border-style);
+        }
+
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .stats-table th { text-align: left; color: #666; padding-bottom: 8px; }
+        .stats-table td { padding: 8px 0; border-top: var(--border-style); }
+
+        /* Custom Popup Style */
+        .leaflet-popup-content-wrapper {
+            background: #1a1a1a;
+            color: #fff;
+            border-radius: 12px;
+            border: var(--border-style);
+        }
+        .leaflet-popup-tip { background: #1a1a1a; }
+        
+        .selected-hat-info {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 12px;
+            border-radius: 10px;
+            border-left: 4px solid var(--accent-green);
+        }
+
+        /* Search Results Style */
+        #searchResults {
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+            display: none;
+            border: var(--border-style);
+        }
+        .search-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 12px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .search-item:hover { background: rgba(255,255,255,0.1); }
+
+        /* Nabız (Pulse) Animasyonu - Daha garantili yöntem */
+        @keyframes neonPulse {
+            0% { stroke-opacity: 0.3; stroke-width: 4; }
+            50% { stroke-opacity: 1; stroke-width: 8; }
+            100% { stroke-opacity: 0.3; stroke-width: 4; }
+        }
+        .pulse-critical {
+            animation: neonPulse 1.5s infinite ease-in-out;
+        }
+
+        /* Scrollbar */
+        #panel::-webkit-scrollbar, #searchResults::-webkit-scrollbar { width: 5px; }
+        #panel::-webkit-scrollbar-track, #searchResults::-webkit-scrollbar-track { background: transparent; }
+        #panel::-webkit-scrollbar-thumb, #searchResults::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="panel">
+    <h2>Minibüs Analiz Paneli</h2>
+    
+    <!-- ARAMA BÖLÜMÜ -->
+    <div class="input-group">
+        <label>Hat veya Güzergah Ara</label>
+        <input type="text" id="lineSearchInput" placeholder="Örn: BL200, Beşiktaş..." oninput="hatAra()">
+        <div id="searchResults"></div>
+    </div>
+
+    <div class="input-group">
+        <label>İlçe / Sokak Ara</label>
+        <div style="display: flex; gap: 5px;">
+            <input type="text" id="locationSearchInput" placeholder="Örn: Kadıköy, İstiklal Cd..." style="flex: 1;">
+            <button onclick="konumAra()" style="padding: 10px; width: auto;">🔍</button>
+        </div>
+    </div>
+
+    <hr style="border: 0; border-top: var(--border-style); margin: 5px 0;">
+
+    <div id="selectionArea" style="display: none;">
+        <label>Seçili Hat</label>
+        <div class="selected-hat-info">
+            <div id="hatAdi" style="font-weight: 700; font-size: 14px;">—</div>
+            <div id="hatNo" style="font-size: 11px; color: #888;">—</div>
+        </div>
+
+        <div class="input-group" style="margin-top: 15px;">
+            <label>Sorun Bildir</label>
+            <input type="text" id="sorunInput" placeholder="Örn: Çok yoğun, Gecikme var...">
+            <button class="secondary" onclick="sorunEkle()">Sorunu Kaydet</button>
+        </div>
+    </div>
+
+    <div id="emptySelection">
+        <p style="text-align: center; padding: 20px; border: 1px dashed #444; border-radius: 10px;">
+            Hat detaylarını görmek için haritadan bir çizgiye tıklayın.
+        </p>
+    </div>
+
+    <table class="stats-table" id="hatTable" style="display: none;">
+        <thead>
+            <tr><th>En Sorunlu Hatlar</th><th style="text-align:right">Sayı</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="minibus_data.js"></script>
+
+<script>
+    // ========== HARİTA KURULUMU ==========
+    var map = L.map('map', {
+        zoomControl: false // Zoom butonunu gizle (sağa alacağız veya temiz kalsın)
+    }).setView([41.01, 28.97], 11);
+
+    // Koyu Tema Altlık
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        attribution: "&copy; OpenStreetMap & CartoDB"
+    }).addTo(map);
+
+    // Zoom kontrolünü sağ alta alalım daha modern durur
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    var hatLayer = null;
+    var seciliKatman = null;
+
+    // ========== RENK VE STİL ==========
+    function hatRenk(s) {
+        if (!s || s === 0) return "#ffffff"; // Sorun yoksa BEYAZ
+        if (s <= 4) return "#00ff88";        // Az sorun: NEON YEŞİL
+        if (s <= 10) return "#ffbb00";       // Orta: TURUNCU
+        return "#ff4444";                    // Çok: KIRMIZI
+    }
+
+    function hatStyle(feature) {
+        var s = feature.properties.sorun || 0;
+        var renk = hatRenk(s);
+        return {
+            color: renk,
+            weight: (s > 10) ? 5 : 3,
+            opacity: (s > 10) ? 1 : 0.6,
+            lineCap: 'round',
+            lineJoin: 'round'
+        };
+    }
+
+    // CSS Sınıfını zorla uygula
+    function pulseGuncelle(layer, sorunSayisi) {
+        var el = layer.getElement();
+        if (el) {
+            if (sorunSayisi > 10) {
+                el.classList.add('pulse-critical');
+            } else {
+                el.classList.remove('pulse-critical');
+            }
+        }
+    }
+
+    // ========== VERİ YÜKLEME (YEREL DEĞİŞKEN) ==========
+    function verileriYukle() {
+        try {
+            if (!window.minibusData) return;
+            
+            // Kayıtlı verileri LocalStorage'dan al
+            var kayıtlıSorunlar = JSON.parse(localStorage.getItem('minibus_sorunlar') || '{}');
+            
+            if (hatLayer) map.removeLayer(hatLayer);
+
+            hatLayer = L.geoJSON(window.minibusData, {
+                style: function(feature) {
+                    // Eğer hafızada bu hat için sorun varsa onu kullan
+                    var hatNo = feature.properties.HATNO;
+                    if (kayıtlıSorunlar[hatNo]) {
+                        feature.properties.sorun = kayıtlıSorunlar[hatNo];
+                    }
+                    return hatStyle(feature);
+                },
+                onEachFeature: function(feature, layer) {
+                    onEachFeature(feature, layer);
+                    setTimeout(() => pulseGuncelle(layer, feature.properties.sorun || 0), 100);
+                }
+            }).addTo(map);
+
+            tabloGuncelle();
+            document.getElementById('hatTable').style.display = 'table';
+        } catch (error) {
+            console.error("Veri yükleme hatası:", error);
+        }
+    }
+
+    // Sayfa açıldığında otomatik yükle
+    window.onload = verileriYukle;
+
+    // ========== ARAMA FONKSİYONLARI ==========
+    
+    // 1. Hat Arama
+    function hatAra() {
+        var term = document.getElementById('lineSearchInput').value.toLowerCase();
+        var resultsDiv = document.getElementById('searchResults');
+        resultsDiv.innerHTML = "";
+        
+        if (term.length < 2) {
+            resultsDiv.style.display = "none";
+            return;
+        }
+
+        var matches = [];
+        hatLayer.eachLayer(function(layer) {
+            var props = layer.feature.properties;
+            var text = (props.HAT_ADI + " " + props.HATNO + " " + props.GUZERGAH).toLowerCase();
+            if (text.includes(term)) {
+                matches.push({ layer: layer, name: props.HAT_ADI, no: props.HATNO });
+            }
+        });
+
+        if (matches.length > 0) {
+            resultsDiv.style.display = "block";
+            matches.slice(0, 10).forEach(match => {
+                var div = document.createElement("div");
+                div.className = "search-item";
+                div.innerHTML = `<b>${match.no || ""}</b> ${match.name}`;
+                div.onclick = function() {
+                    resultsDiv.style.display = "none";
+                    document.getElementById('lineSearchInput').value = match.name;
+                    map.fitBounds(match.layer.getBounds(), { padding: [100, 100] });
+                    match.layer.fire('click'); // Simüle tıklama yap ki panel dolsun
+                };
+                resultsDiv.appendChild(div);
+            });
+        } else {
+            resultsDiv.style.display = "none";
+        }
+    }
+
+    // 2. Konum (Sokak/İlçe) Arama - OpenStreetMap Nominatim API
+    async function konumAra() {
+        var query = document.getElementById('locationSearchInput').value;
+        if (!query) return;
+
+        try {
+            // İstanbul ile sınırlandırmak için 'istanbul' kelimesini sona ekliyoruz
+            var url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query + " istanbul")}&limit=1`;
+            const response = await fetch(url);
+            const results = await response.json();
+
+            if (results.length > 0) {
+                var pos = results[0];
+                map.setView([pos.lat, pos.lon], 15); // O konuma git ve yaklaş
+                
+                // Oraya geçici bir işaretçi koyalım
+                L.marker([pos.lat, pos.lon]).addTo(map)
+                    .bindPopup(pos.display_name)
+                    .openPopup();
+            } else {
+                alert("Konum bulunamadı.");
+            }
+        } catch (error) {
+            console.error("Konum arama hatası:", error);
+            alert("Arama servisine şu an ulaşılamıyor.");
+        }
+    }
+
+    function onEachFeature(feature, layer) {
+        layer.on({
+            mouseover: function(e) {
+                if (e.target !== seciliKatman) {
+                    e.target.setStyle({
+                        weight: 6,
+                        opacity: 1,
+                        color: "#fff"
+                    });
+                }
+            },
+            mouseout: function(e) {
+                if (e.target !== seciliKatman) {
+                    hatLayer.resetStyle(e.target);
+                }
+            },
+            click: function(e) {
+                // Önceki seçimi temizle
+                if (seciliKatman) {
+                    hatLayer.resetStyle(seciliKatman);
+                }
+
+                // Yeni seçimi vurgula
+                seciliKatman = e.target;
+                seciliKatman.setStyle({
+                    weight: 8,
+                    color: varRenkSec(feature.properties.sorun),
+                    opacity: 1
+                });
+
+                hatSec(feature.properties, e.target._leaflet_id);
+                
+                // Haritayı o hatta odakla
+                map.fitBounds(e.target.getBounds(), { padding: [50, 50] });
+            }
+        });
+    }
+
+    function varRenkSec(s) {
+        return hatRenk(s);
+    }
+
+    function hatSec(props, id) {
+        document.getElementById('selectionArea').style.display = 'block';
+        document.getElementById('emptySelection').style.display = 'none';
+        
+        document.getElementById('hatAdi').innerText = props.HAT_ADI || "İsimsiz Hat";
+        document.getElementById('hatNo').innerText = "Hat No: " + (props.HATNO || "—");
+        document.getElementById('selectionArea').dataset.currentId = id;
+    }
+
+    function sorunEkle() {
+        var input = document.getElementById('sorunInput');
+        var id = document.getElementById('selectionArea').dataset.currentId;
+        
+        if (!input.value) { alert("Lütfen bir sorun yazın."); return; }
+
+        hatLayer.eachLayer(function(layer) {
+            if (layer._leaflet_id == id) {
+                var yeniSorun = (layer.feature.properties.sorun || 0) + 1;
+                layer.feature.properties.sorun = yeniSorun;
+                
+                // LocalStorage'a kaydet
+                var kayıtlıSorunlar = JSON.parse(localStorage.getItem('minibus_sorunlar') || '{}');
+                kayıtlıSorunlar[layer.feature.properties.HATNO] = yeniSorun;
+                localStorage.setItem('minibus_sorunlar', JSON.stringify(kayıtlıSorunlar));
+
+                layer.setStyle(hatStyle(layer.feature));
+                pulseGuncelle(layer, yeniSorun);
+                tabloGuncelle();
+                input.value = "";
+                alert("Sorun başarıyla kaydedildi. Tarayıcınıza kaydedildiği için sayfa yenilense de silinmeyecektir.");
+            }
+        });
+    }
+
+    function tabloGuncelle() {
+        var tbody = document.querySelector("#hatTable tbody");
+        tbody.innerHTML = "";
+        
+        var hatlar = [];
+        hatLayer.eachLayer(function(l) {
+            if(l.feature.properties.sorun > 0) {
+                hatlar.push(l.feature.properties);
+            }
+        });
+
+        // En çok sorunlu olanları başa getir
+        hatlar.sort((a, b) => (b.sorun || 0) - (a.sorun || 0));
+
+        hatlar.slice(0, 5).forEach(h => {
+            var tr = document.createElement("tr");
+            tr.innerHTML = `<td>${h.HAT_ADI}</td><td align="right"><b>${h.sorun}</b></td>`;
+            tbody.appendChild(tr);
+        });
+    }
+</script>
+
+</body>
+</html>
